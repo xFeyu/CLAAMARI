@@ -1,40 +1,33 @@
-import { Redis } from '@upstash/redis'
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
-})
-
 export default async function handler(req, res) {
-  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress
-  const redisKey = `keygen:${ip}`
-
-  const already = await redis.get(redisKey)
-  if (already) {
-    res.status(429).send('You have already claimed a key in the last 24 hours.')
-    return
+  const SELLER_KEY = process.env.KEYAUTH_SELLER_KEY;
+  if (!SELLER_KEY) {
+    res.status(500).send('Missing KEYAUTH_SELLER_KEY env var');
+    return;
   }
 
-  const SELLER_KEY = process.env.KEYAUTH_SELLER_KEY
-  const url = `https://keyauth.win/api/seller/?sellerkey=${SELLER_KEY}`
-           + `&type=add&expiry=1&mask=****-****-****-****&level=1&amount=1`
-           + `&format=text&character=2&note=lootlabs`
+  const url = 'https://keyauth.win/api/seller/'
+            + '?sellerkey=' + SELLER_KEY
+            + '&type=add&expiry=1&mask=****-****-****-****'
+            + '&level=1&amount=1&format=text&character=2&note=lootlabs';
 
   try {
-    const r = await fetch(url)
-    const key = (await r.text()).trim()
+    const r = await fetch(url);
+    const key = (await r.text()).trim();
 
-    await redis.set(redisKey, '1', { ex: 86400 }) // expires after 24h
+    if (!key || key.length < 6 || key.toLowerCase().includes('error')) {
+      res.status(500).send('KeyAuth returned: ' + key);
+      return;
+    }
 
-    res.setHeader('Content-Type', 'text/html')
-    res.send(`
-      <html><body style="background:#111;color:#eee;font-family:sans-serif;text-align:center;padding:40px">
-        <h1 style="color:#e53138">Your Key (valid 24h)</h1>
-        <input style="font-size:24px;padding:12px;width:80%;text-align:center" value="${key}" readonly>
-        <p>Paste into the authenticate field.</p>
-      </body></html>
-    `)
+    res.setHeader('Content-Type', 'text/html');
+    res.send(
+      '<!doctype html><html><body style="background:#111;color:#eee;font-family:sans-serif;text-align:center;padding:40px">'
+      + '<h1 style="color:#e53138">Your Xuro Key (24h)</h1>'
+      + '<input style="font-size:24px;padding:12px;width:80%;text-align:center" value="' + key + '" readonly onclick="this.select()">'
+      + '<p>Paste into the cheat\'s Authenticate field.</p>'
+      + '</body></html>'
+    );
   } catch (e) {
-    res.status(500).send('Generation failed.')
+    res.status(500).send('Generation failed: ' + e.message);
   }
 }
