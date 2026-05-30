@@ -6,7 +6,7 @@ const redis = new Redis({
 });
 
 const KA_NAME  = 'Calamari';
-const KA_OWNER = 'YOUR_KEYAUTH_OWNER_ID'; // <-- paste your owner id
+const KA_OWNER = 'OH1YXnCWPY'; // <-- paste your owner id
 
 async function issueKeyauthLicense() {
   const url = `https://keyauth.win/api/seller/?sellerkey=${process.env.KEYAUTH_SELLER_KEY}`
