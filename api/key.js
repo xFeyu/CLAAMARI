@@ -1,3 +1,4 @@
+```javascript
 import { Redis } from '@upstash/redis';
 
 const redis = new Redis({
@@ -10,7 +11,8 @@ const KA_OWNER = 'OH1YXnCWPY'; // <-- paste your owner id
 async function issueKeyauthLicense() {
   const url = `https://keyauth.win/api/seller/?sellerkey=${process.env.KEYAUTH_SELLER_KEY}`
             + `&type=add`
-            + `&expiry=1`
+            + `&expiry=8`
+            + `&unit=hours`
             + `&mask=******-******-******-******`
             + `&level=1`
             + `&amount=1`
@@ -41,10 +43,10 @@ function htmlOk(license) {
 .ok{color:#33d17a;font-size:13px;margin-top:8px}
 .h{color:#7a7a82;font-size:12px;margin-top:18px}</style></head>
 <body><div class="box">
-<div class="t">Your Xuro Key (24h)</div>
+<div class="t">Your Xuro Key (8h)</div>
 <div class="k" id="k">${license}</div>
 <div class="ok" id="ok">copied to clipboard — paste in Xuro</div>
-<div class="h">Open Xuro and the key auto-fills. Valid for 24 hours.</div>
+<div class="h">Open Xuro and the key auto-fills. Valid for 8 hours.</div>
 <script>
 navigator.clipboard.writeText(${JSON.stringify(license)}).catch(()=>{
   document.getElementById('ok').textContent='copy manually'});
@@ -81,7 +83,7 @@ export default async function handler(req, res) {
     return res.status(403).send(htmlErr('Invalid or expired token.'));
   }
 
-  await redis.set(usedKey, '1', { ex: 86400 });
+  await redis.set(usedKey, '1', { ex: 28800 });
 
   try {
     const license = await issueKeyauthLicense();
@@ -90,3 +92,4 @@ export default async function handler(req, res) {
     return res.status(500).send(htmlErr('KeyAuth issue failed: ' + e.message));
   }
 }
+```
