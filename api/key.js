@@ -1,4 +1,3 @@
-```javascript
 import { Redis } from '@upstash/redis';
 
 const redis = new Redis({
@@ -6,19 +5,10 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const KA_OWNER = 'OH1YXnCWPY'; // <-- paste your owner id
+const KA_OWNER = 'OH1YXnCWPY';
 
 async function issueKeyauthLicense() {
-  const url = `https://keyauth.win/api/seller/?sellerkey=${process.env.KEYAUTH_SELLER_KEY}`
-            + `&type=add`
-            + `&expiry=8`
-            + `&unit=hours`
-            + `&mask=******-******-******-******`
-            + `&level=1`
-            + `&amount=1`
-            + `&owner=${KA_OWNER}`
-            + `&character=2`
-            + `&format=JSON`;
+  const url = `https://keyauth.win/api/seller/?sellerkey=${process.env.KEYAUTH_SELLER_KEY}&type=add&expiry=8&unit=hours&mask=******-******-******-******&level=1&amount=1&owner=${KA_OWNER}&character=2&format=JSON`;
   const r = await fetch(url);
   const j = await r.json();
   if (!j.success) throw new Error(j.message || 'keyauth failed');
@@ -89,7 +79,7 @@ export default async function handler(req, res) {
     const license = await issueKeyauthLicense();
     return res.status(200).send(htmlOk(license));
   } catch (e) {
+    console.error('HANDLER CRASH:', e);
     return res.status(500).send(htmlErr('KeyAuth issue failed: ' + e.message));
   }
 }
-```
