@@ -5,81 +5,83 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const KA_OWNER = 'OH1YXnCWPY';
-
-async function issueKeyauthLicense() {
-  const url = `https://keyauth.win/api/seller/?sellerkey=${process.env.KEYAUTH_SELLER_KEY}&type=add&expiry=8&unit=hours&mask=******-******-******-******&level=1&amount=1&owner=${KA_OWNER}&character=2&format=JSON`;
-  const r = await fetch(url);
-  const j = await r.json();
-  if (!j.success) throw new Error(j.message || 'keyauth failed');
-  return j.key;
-}
+const HOURS_PER_COMPLETION = 2;
+const COOLDOWN_HOURS       = 3;
 
 async function validateWorkInkToken(t) {
-  const r = await fetch(
-    `https://work.ink/_api/v2/token/isValid/${encodeURIComponent(t)}?deleteToken=1`
-  );
+  const r = await fetch(`https://work.ink/_api/v2/token/isValid/${encodeURIComponent(t)}?deleteToken=1`);
   if (!r.ok) return false;
   const j = await r.json();
   return j.valid === true;
 }
 
-function htmlOk(license) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Xuro Key</title>
-<style>body{background:#0e0e10;color:#eee;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-.box{background:#1a1a1f;padding:40px 48px;border:1px solid #2a2a32;border-radius:12px;text-align:center;min-width:340px}
-.t{font-size:13px;color:#9b9ba0;letter-spacing:.5px;text-transform:uppercase;margin-bottom:14px}
-.k{font-family:'Consolas',monospace;font-size:24px;color:#9b59ff;letter-spacing:2px;margin:0 0 18px;user-select:all}
-.ok{color:#33d17a;font-size:13px;margin-top:8px}
-.h{color:#7a7a82;font-size:12px;margin-top:18px}</style></head>
-<body><div class="box">
-<div class="t">Your Xuro Key (8h)</div>
-<div class="k" id="k">${license}</div>
-<div class="ok" id="ok">copied to clipboard — paste in Xuro</div>
-<div class="h">Open Xuro and the key auto-fills. Valid for 8 hours.</div>
-<script>
-navigator.clipboard.writeText(${JSON.stringify(license)}).catch(()=>{
-  document.getElementById('ok').textContent='copy manually'});
-</script></div></body></html>`;
+function readCookie(req, name) {
+  const raw = req.headers.cookie || '';
+  for (const part of raw.split(';')) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) return decodeURIComponent(v.join('='));
+  }
+  return null;
 }
 
-function htmlErr(msg) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Xuro Key</title>
-<style>body{background:#0e0e10;color:#eee;font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
-.box{background:#1a1a1f;padding:36px 42px;border:1px solid #2a2a32;border-radius:12px}
-.t{color:#ff5466;font-size:16px;margin-bottom:12px}
-.s{color:#9b9ba0;font-size:13px}</style></head>
-<body><div class="box"><div class="t">${msg}</div>
-<div class="s">Redo the locker at <b>work.ink/2Cm2/xuro-key</b> to get a fresh key.</div>
-</div></body></html>`;
+function htmlMsg(title, body) {
+  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+  <style>body{background:#0c0c10;color:#e0e0e8;font-family:Segoe UI,sans-serif;
+  display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
+  .card{background:#16161c;border:1px solid #2a2a36;border-radius:12px;
+  padding:28px 36px;text-align:center;max-width:420px}
+  h1{margin:0 0 10px;color:#ac26d6;font-size:20px}
+  p{margin:0;color:#a0a0b0;font-size:14px;line-height:1.5}</style>
+  </head><body><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  const { token } = req.query;
+  const hwid = readCookie(req, 'hx_hwid');
 
-  const t = req.query.t;
-  if (!t || typeof t !== 'string' || t.length < 8) {
-    return res.status(400).send(htmlErr('Missing token.'));
+  if (!token || typeof token !== 'string') {
+    return res.status(400).send(htmlMsg('Invalid Link', 'No token in URL.'));
+  }
+  if (!hwid) {
+    return res.status(400).send(htmlMsg('Session Lost',
+      'Open the "Get Key" button from Helix again, then complete the offer.'));
   }
 
-  const usedKey = `usedt:${t}`;
-  if (await redis.get(usedKey)) {
-    return res.status(403).send(htmlErr('Token already used.'));
+  // Prevent token reuse (8h window).
+  const tokenKey = `wi_token:${token}`;
+  const seen = await redis.get(tokenKey);
+  if (seen) {
+    return res.status(409).send(htmlMsg('Already Used',
+      'This work.ink token was already redeemed.'));
+  }
+  if (!await validateWorkInkToken(token)) {
+    return res.status(403).send(htmlMsg('Invalid Token',
+      'work.ink did not confirm this offer was completed.'));
+  }
+  await redis.set(tokenKey, '1', { ex: 8 * 60 * 60 });
+
+  const userKey = `user:${hwid}`;
+  const user = await redis.get(userKey);
+  if (!user) {
+    return res.status(404).send(htmlMsg('No Account',
+      'No user record for this HWID. Launch Helix once first, then redeem.'));
   }
 
-  let ok = false;
-  try { ok = await validateWorkInkToken(t); } catch { ok = false; }
-  if (!ok) {
-    return res.status(403).send(htmlErr('Invalid or expired token.'));
+  const now = Date.now();
+  const cooldownMs = COOLDOWN_HOURS * 60 * 60 * 1000;
+
+  if (user.last_redeem_at && now - user.last_redeem_at < cooldownMs) {
+    const remainingMin = Math.ceil((cooldownMs - (now - user.last_redeem_at)) / 60000);
+    return res.status(429).send(htmlMsg('Cooldown',
+      `You can redeem again in ${remainingMin} minutes.`));
   }
 
-  await redis.set(usedKey, '1', { ex: 28800 });
+  const addMs = HOURS_PER_COMPLETION * 60 * 60 * 1000;
+  user.expires_at    = Math.max(now, user.expires_at) + addMs;
+  user.last_redeem_at = now;
+  await redis.set(userKey, user);
 
-  try {
-    const license = await issueKeyauthLicense();
-    return res.status(200).send(htmlOk(license));
-  } catch (e) {
-    console.error('HANDLER CRASH:', e);
-    return res.status(500).send(htmlErr('KeyAuth issue failed: ' + e.message));
-  }
+  const hoursLeft = Math.round((user.expires_at - now) / 3600000 * 10) / 10;
+  return res.status(200).send(htmlMsg('Time Added',
+    `+${HOURS_PER_COMPLETION}h applied. You now have ${hoursLeft}h on your key.<br>You can close this tab and return to Helix.`));
 }
