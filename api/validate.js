@@ -8,16 +8,14 @@ const redis = new Redis({
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { hwid, key } = req.body ?? {};
-  if (typeof hwid !== 'string' || typeof key !== 'string') {
-    return res.status(400).json({ valid: false });
+  const { key } = req.body ?? {};
+  if (typeof key !== 'string' || !key.startsWith('HX-')) {
+    return res.status(200).json({ valid: false });
   }
 
-  const user = await redis.get(`user:${hwid}`);
-  if (!user || user.key !== key) {
-    return res.status(200).json({ valid: false, reason: 'unknown' });
-  }
+  const entry = await redis.get(`key:${key}`);
+  if (!entry) return res.status(200).json({ valid: false });
 
-  const valid = user.expires_at > Date.now();
-  return res.status(200).json({ valid, expires_at: user.expires_at });
+  const valid = entry.expires_at > Date.now();
+  return res.status(200).json({ valid, expires_at: entry.expires_at });
 }
