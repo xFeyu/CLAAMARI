@@ -1,12 +1,12 @@
 import { Redis } from '@upstash/redis';
+import crypto from 'crypto';
 
 const redis = new Redis({
   url:   process.env.UPSTASH_REDIS_REST_URL,
   token: process.env.UPSTASH_REDIS_REST_TOKEN,
 });
 
-const HOURS_PER_COMPLETION = 2;
-const COOLDOWN_HOURS       = 3;
+const KEY_HOURS = 2;
 
 async function validateWorkInkToken(t) {
   const r = await fetch(`https://work.ink/_api/v2/token/isValid/${encodeURIComponent(t)}?deleteToken=1`);
@@ -15,73 +15,51 @@ async function validateWorkInkToken(t) {
   return j.valid === true;
 }
 
-function readCookie(req, name) {
-  const raw = req.headers.cookie || '';
-  for (const part of raw.split(';')) {
-    const [k, ...v] = part.trim().split('=');
-    if (k === name) return decodeURIComponent(v.join('='));
-  }
-  return null;
+function makeKey() {
+  return 'HX-' + crypto.randomBytes(12).toString('hex').toUpperCase();
 }
 
-function htmlMsg(title, body) {
+function html(title, body) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
   <style>body{background:#0c0c10;color:#e0e0e8;font-family:Segoe UI,sans-serif;
   display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
   .card{background:#16161c;border:1px solid #2a2a36;border-radius:12px;
-  padding:28px 36px;text-align:center;max-width:420px}
+  padding:28px 36px;text-align:center;max-width:460px}
   h1{margin:0 0 10px;color:#ac26d6;font-size:20px}
-  p{margin:0;color:#a0a0b0;font-size:14px;line-height:1.5}</style>
-  </head><body><div class="card"><h1>${title}</h1><p>${body}</p></div></body></html>`;
+  p{margin:0 0 14px;color:#a0a0b0;font-size:14px;line-height:1.5}
+  .key{background:#0a0a0e;border:1px solid #2a2a36;border-radius:8px;
+  padding:14px;font-family:Consolas,monospace;color:#e8e8f0;
+  font-size:15px;letter-spacing:1px;margin-bottom:12px;user-select:all}
+  button{background:#ac26d6;color:#fff;border:0;border-radius:6px;
+  padding:9px 18px;font-size:14px;cursor:pointer}</style></head><body>
+  <div class="card"><h1>${title}</h1>${body}</div></body></html>`;
 }
 
 export default async function handler(req, res) {
   const { token } = req.query;
-  const hwid = readCookie(req, 'hx_hwid');
 
   if (!token || typeof token !== 'string') {
-    return res.status(400).send(htmlMsg('Invalid Link', 'No token in URL.'));
-  }
-  if (!hwid) {
-    return res.status(400).send(htmlMsg('Session Lost',
-      'Open the "Get Key" button from Helix again, then complete the offer.'));
+    return res.status(400).send(html('Invalid Link', '<p>No token in URL.</p>'));
   }
 
-  // Prevent token reuse (8h window).
+  // Prevent token reuse.
   const tokenKey = `wi_token:${token}`;
-  const seen = await redis.get(tokenKey);
-  if (seen) {
-    return res.status(409).send(htmlMsg('Already Used',
-      'This work.ink token was already redeemed.'));
+  if (await redis.get(tokenKey)) {
+    return res.status(409).send(html('Already Used',
+      '<p>This work.ink token was already redeemed. Complete the offer again to get a new key.</p>'));
   }
-  if (!await validateWorkInkToken(token)) {
-    return res.status(403).send(htmlMsg('Invalid Token',
-      'work.ink did not confirm this offer was completed.'));
+  if (!(await validateWorkInkToken(token))) {
+    return res.status(403).send(html('Invalid Token',
+      '<p>work.ink did not confirm this offer was completed.</p>'));
   }
   await redis.set(tokenKey, '1', { ex: 8 * 60 * 60 });
 
-  const userKey = `user:${hwid}`;
-  const user = await redis.get(userKey);
-  if (!user) {
-    return res.status(404).send(htmlMsg('No Account',
-      'No user record for this HWID. Launch Helix once first, then redeem.'));
-  }
+  // Generate and store the key.
+  const key = makeKey();
+  const expires_at = Date.now() + KEY_HOURS * 60 * 60 * 1000;
+  await redis.set(`key:${key}`, { expires_at }, { ex: KEY_HOURS * 60 * 60 });
 
-  const now = Date.now();
-  const cooldownMs = COOLDOWN_HOURS * 60 * 60 * 1000;
-
-  if (user.last_redeem_at && now - user.last_redeem_at < cooldownMs) {
-    const remainingMin = Math.ceil((cooldownMs - (now - user.last_redeem_at)) / 60000);
-    return res.status(429).send(htmlMsg('Cooldown',
-      `You can redeem again in ${remainingMin} minutes.`));
-  }
-
-  const addMs = HOURS_PER_COMPLETION * 60 * 60 * 1000;
-  user.expires_at    = Math.max(now, user.expires_at) + addMs;
-  user.last_redeem_at = now;
-  await redis.set(userKey, user);
-
-  const hoursLeft = Math.round((user.expires_at - now) / 3600000 * 10) / 10;
-  return res.status(200).send(htmlMsg('Time Added',
-    `+${HOURS_PER_COMPLETION}h applied. You now have ${hoursLeft}h on your key.<br>You can close this tab and return to Helix.`));
-}
+  const body = `
+    <p>Your key is valid for ${KEY_HOURS} hours.</p>
+    <div class="key" id="k">${key}</div>
+    <button onclick="navigator.clipbo
