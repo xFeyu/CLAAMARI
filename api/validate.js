@@ -13,7 +13,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ valid: false });
   }
 
-  const entry = await redis.get(`key:${key}`);
+  const entry = await redis.get('key:' + key);
   if (!entry) return res.status(200).json({ valid: false });
 
   const valid = entry.expires_at > Date.now();
