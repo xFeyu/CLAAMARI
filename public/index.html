@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Key Verification System</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      background: #0c0c10;
+      color: #e0e0e8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 16px;
+    }
+    .card {
+      background: #16161c;
+      border: 1px solid #2a2a36;
+      border-radius: 14px;
+      padding: 36px 32px;
+      text-align: center;
+      max-width: 460px;
+      width: 100%;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+    }
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      background: #10b981;
+      border-radius: 50%;
+      margin-right: 6px;
+      box-shadow: 0 0 10px #10b981;
+    }
+    h1 {
+      margin: 12px 0 8px;
+      color: #f3f4f6;
+      font-size: 22px;
+    }
+    p {
+      color: #9ca3af;
+      font-size: 14px;
+      line-height: 1.6;
+      margin: 0 0 16px;
+    }
+    .endpoint {
+      background: #0a0a0e;
+      border: 1px solid #27273a;
+      border-radius: 8px;
+      padding: 12px;
+      font-family: monospace;
+      color: #c084fc;
+      font-size: 13px;
+      word-break: break-all;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div><span class="status-dot"></span><span style="font-size:13px;color:#10b981;font-weight:600">API Operational</span></div>
+    <h1>Key System Backend</h1>
+    <p>This backend generates and validates keys after completing a Work.ink link.</p>
+    <div class="endpoint">Target: /api/key?token={TOKEN}</div>
+  </div>
+</body>
+</html>
